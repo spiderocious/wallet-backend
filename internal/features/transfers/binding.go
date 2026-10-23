@@ -7,6 +7,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/httpx"
+	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/validation"
 )
 
 // validate is the same engine Gin uses, for bodies the idempotency
@@ -14,6 +15,7 @@ import (
 var validate = sync.OnceValue(func() *validator.Validate {
 	v := validator.New(validator.WithRequiredStructEnabled())
 	v.SetTagName("binding")
+	validation.Register(v)
 	return v
 })
 

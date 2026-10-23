@@ -11,7 +11,7 @@ const (
 	MsgIdempotencyMismatch MessageKey = "common.idempotency_mismatch"
 	MsgTokenInvalid        MessageKey = "auth.token_invalid"
 	MsgInvalidCredentials  MessageKey = "auth.invalid_credentials"
-	MsgPhoneTaken          MessageKey = "auth.phone_taken"
+	MsgUsernameTaken       MessageKey = "auth.username_taken"
 	MsgInsufficientBalance MessageKey = "transfers.insufficient_balance"
 	MsgRecipientNotFound   MessageKey = "transfers.recipient_not_found"
 	MsgSelfTransfer        MessageKey = "transfers.self_transfer"
@@ -24,10 +24,10 @@ var catalog = map[MessageKey]string{
 	MsgRateLimited:         "Too many requests. Please wait a moment.",
 	MsgIdempotencyMismatch: "This request was already made with different details.",
 	MsgTokenInvalid:        "Your session has expired. Please sign in again.",
-	MsgInvalidCredentials:  "Phone number or PIN is incorrect.",
-	MsgPhoneTaken:          "An account with this phone number already exists.",
+	MsgInvalidCredentials:  "Username or PIN is incorrect.",
+	MsgUsernameTaken:       "That username is taken.",
 	MsgInsufficientBalance: "Your balance is too low for this transfer.",
-	MsgRecipientNotFound:   "We could not find anyone with that phone number.",
+	MsgRecipientNotFound:   "We could not find anyone with that username.",
 	MsgSelfTransfer:        "You cannot send money to yourself.",
 	MsgWalletNotFound:      "Wallet not found.",
 }

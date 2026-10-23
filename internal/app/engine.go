@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/env"
@@ -18,6 +20,7 @@ import (
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/features/telemetry"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/features/transfers"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/middleware"
+	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/validation"
 )
 
 // Deps is everything the engine needs.
@@ -30,6 +33,10 @@ type Deps struct {
 
 // Engine builds the router.
 func Engine(d Deps) *gin.Engine {
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		validation.Register(v)
+	}
+
 	if d.Config.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}

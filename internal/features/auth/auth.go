@@ -19,6 +19,7 @@ import (
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/ids"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/middleware"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/money"
+	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/validation"
 )
 
 // SignupBonus is what every new wallet receives: ₦5,000.
@@ -26,9 +27,9 @@ const SignupBonus money.Kobo = 500_000
 
 // User is the wire shape. The PIN hash never leaves the repo.
 type User struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Phone string `json:"phone"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
 }
 
 // Wallet is the wire shape of a wallet with its balance.
@@ -39,15 +40,15 @@ type Wallet struct {
 
 // SignupRequest is the sign-up body.
 type SignupRequest struct {
-	Phone string `json:"phone" binding:"required,min=7,max=20"`
-	Name  string `json:"name" binding:"required,min=2,max=80"`
-	PIN   string `json:"pin" binding:"required,len=4,numeric"`
+	Username string `json:"username" binding:"required,username"`
+	Name     string `json:"name" binding:"required,min=2,max=80"`
+	PIN      string `json:"pin" binding:"required,len=4,numeric"`
 }
 
 // LoginRequest is the sign-in body.
 type LoginRequest struct {
-	Phone string `json:"phone" binding:"required,min=7,max=20"`
-	PIN   string `json:"pin" binding:"required,len=4,numeric"`
+	Username string `json:"username" binding:"required,username"`
+	PIN      string `json:"pin" binding:"required,len=4,numeric"`
 }
 
 // SessionResponse is returned by both sign-up and sign-in.
@@ -65,21 +66,21 @@ type userRow struct {
 	WalletID string
 }
 
-func (r repo) findByPhone(ctx context.Context, phone string) (userRow, error) {
+func (r repo) findByUsername(ctx context.Context, username string) (userRow, error) {
 	var u userRow
 	err := r.pool.QueryRow(ctx, `
-		SELECT u.id, u.name, u.phone, u.pin_hash, w.id
-		FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.phone = $1`, phone).
-		Scan(&u.ID, &u.Name, &u.Phone, &u.PINHash, &u.WalletID)
+		SELECT u.id, u.name, u.username, u.pin_hash, w.id
+		FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.username = $1`, username).
+		Scan(&u.ID, &u.Name, &u.Username, &u.PINHash, &u.WalletID)
 	return u, err
 }
 
 func (r repo) findByID(ctx context.Context, id string) (userRow, error) {
 	var u userRow
 	err := r.pool.QueryRow(ctx, `
-		SELECT u.id, u.name, u.phone, u.pin_hash, w.id
+		SELECT u.id, u.name, u.username, u.pin_hash, w.id
 		FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.id = $1`, id).
-		Scan(&u.ID, &u.Name, &u.Phone, &u.PINHash, &u.WalletID)
+		Scan(&u.ID, &u.Name, &u.Username, &u.PINHash, &u.WalletID)
 	return u, err
 }
 
@@ -115,8 +116,8 @@ func (s *Service) Signup(ctx context.Context, in SignupRequest) (SessionResponse
 	walletID := ids.New(ids.Wallet)
 
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO users (id, phone, name, pin_hash) VALUES ($1, $2, $3, $4)`,
-			userID, in.Phone, in.Name, string(hash)); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO users (id, username, name, pin_hash) VALUES ($1, $2, $3, $4)`,
+			userID, validation.Username(in.Username), in.Name, string(hash)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO wallets (id, user_id, kind) VALUES ($1, $2, 'user')`, walletID, userID); err != nil {
@@ -128,8 +129,8 @@ func (s *Service) Signup(ctx context.Context, in SignupRequest) (SessionResponse
 		}
 		return ledger.Post(ctx, tx, treasury, walletID, SignupBonus, ledger.KindSignupBonus, "signup:"+userID)
 	})
-	if db.IsUniqueViolation(err, "users_phone_key") {
-		return SessionResponse{}, httpx.Domain(httpx.ReasonAlreadyExists, httpx.MsgPhoneTaken, http.StatusConflict)
+	if db.IsUniqueViolation(err, "users_username_key") {
+		return SessionResponse{}, httpx.Domain(httpx.ReasonAlreadyExists, httpx.MsgUsernameTaken, http.StatusConflict)
 	}
 	if err != nil {
 		return SessionResponse{}, ledger.MapCommit(err)
@@ -137,10 +138,10 @@ func (s *Service) Signup(ctx context.Context, in SignupRequest) (SessionResponse
 	return s.session(ctx, userID)
 }
 
-// Login verifies the PIN and issues a token. Unknown phone and wrong PIN are
-// the same error so phones cannot be enumerated.
+// Login verifies the PIN and issues a token. Unknown username and wrong PIN
+// are the same error so usernames cannot be enumerated.
 func (s *Service) Login(ctx context.Context, in LoginRequest) (SessionResponse, error) {
-	u, err := s.repo.findByPhone(ctx, in.Phone)
+	u, err := s.repo.findByUsername(ctx, validation.Username(in.Username))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SessionResponse{}, invalidCredentials()
 	}

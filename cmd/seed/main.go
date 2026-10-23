@@ -65,11 +65,14 @@ func run() error {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
 	userID, walletID := "u_01PRESENTER0000000000000000", "w_01PRESENTER0000000000000000"
 	err = db.WithTx(ctx, pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `INSERT INTO users (id, phone, name, pin_hash) VALUES ($1, '08030000000', 'Feranmi Adeniji', $2) ON CONFLICT (phone) DO NOTHING`, userID, string(hash))
-		if err != nil || tag.RowsAffected() == 0 {
+		// The user row is upserted so a username change in the seed reaches
+		// an existing deployment; the wallet and its bonus are created once.
+		if _, err := tx.Exec(ctx, `INSERT INTO users (id, username, name, pin_hash) VALUES ($1, 'feranmi', 'Feranmi Adeniji', $2)
+			ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, name = EXCLUDED.name`, userID, string(hash)); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO wallets (id, user_id, kind) VALUES ($1, $2, 'user')`, walletID, userID); err != nil {
+		tag, err := tx.Exec(ctx, `INSERT INTO wallets (id, user_id, kind) VALUES ($1, $2, 'user') ON CONFLICT (id) DO NOTHING`, walletID, userID)
+		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
 		return ledger.Post(ctx, tx, treasury, walletID, 500_000, ledger.KindSignupBonus, "signup:"+userID)
@@ -77,6 +80,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("seed presenter: %w", err)
 	}
-	fmt.Println("seed: presenter ensured (08030000000 / 1234)")
+	fmt.Println("seed: presenter ensured (feranmi / 1234)")
 	return nil
 }

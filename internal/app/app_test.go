@@ -85,7 +85,7 @@ func reset(t *testing.T) {
 
 type session struct {
 	Token  string `json:"token"`
-	User   struct{ ID, Name, Phone string }
+	User   struct{ ID, Name, Username string }
 	Wallet struct {
 		ID          string `json:"id"`
 		BalanceKobo int64  `json:"balance_kobo"`
@@ -164,9 +164,9 @@ func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 	return out
 }
 
-func signup(t *testing.T, phone, name string) session {
+func signup(t *testing.T, username, name string) session {
 	t.Helper()
-	w := call(t, "", "POST", "/api/v1/auth/signup", map[string]string{"phone": phone, "name": name, "pin": "1234"}, nil)
+	w := call(t, "", "POST", "/api/v1/auth/signup", map[string]string{"username": username, "name": name, "pin": "1234"}, nil)
 	if w.Code != 201 {
 		t.Fatalf("signup %d: %s", w.Code, w.Body)
 	}
@@ -185,20 +185,20 @@ func balance(t *testing.T, token string) int64 {
 	}]](t, w).Data.BalanceKobo
 }
 
-func send(t *testing.T, token, toPhone string, kobo int64, key string) *httptest.ResponseRecorder {
+func send(t *testing.T, token, toUsername string, kobo int64, key string) *httptest.ResponseRecorder {
 	t.Helper()
 	h := map[string]string{}
 	if key != "" {
 		h["Idempotency-Key"] = key
 	}
-	return call(t, token, "POST", "/api/v1/transfers", map[string]any{"to_phone": toPhone, "amount_kobo": kobo}, h)
+	return call(t, token, "POST", "/api/v1/transfers", map[string]any{"to_username": toUsername, "amount_kobo": kobo}, h)
 }
 
 // ---- tests ----
 
 func TestSignupCreditsFiveThousandThroughTheLedger(t *testing.T) {
 	reset(t)
-	s := signup(t, "08030000001", "Ayomide Bello")
+	s := signup(t, "ayomide", "Ayomide Bello")
 	if s.Wallet.BalanceKobo != 500_000 {
 		t.Fatalf("balance %d", s.Wallet.BalanceKobo)
 	}
@@ -211,8 +211,8 @@ func TestSignupCreditsFiveThousandThroughTheLedger(t *testing.T) {
 		t.Fatalf("ledger rows %d credit %d", entries, credit)
 	}
 
-	t.Run("same phone again is already_exists", func(t *testing.T) {
-		w := call(t, "", "POST", "/api/v1/auth/signup", map[string]string{"phone": "08030000001", "name": "Again", "pin": "1234"}, nil)
+	t.Run("same username again is already_exists", func(t *testing.T) {
+		w := call(t, "", "POST", "/api/v1/auth/signup", map[string]string{"username": "ayomide", "name": "Again", "pin": "1234"}, nil)
 		if w.Code != 409 || decode[errorEnvelope](t, w).Error.Reason != string(httpx.ReasonAlreadyExists) {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -233,10 +233,10 @@ func TestSignupCreditsFiveThousandThroughTheLedger(t *testing.T) {
 
 func TestTransferPostsTwoBalancedRows(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	b := signup(t, "08030000002", "Chukwuemeka Obi")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	b := signup(t, "obi", "Chukwuemeka Obi")
 
-	w := send(t, a.Token, "08030000002", 150_000, "k1")
+	w := send(t, a.Token, "obi", 150_000, "k1")
 	if w.Code != 201 {
 		t.Fatalf("%d: %s", w.Code, w.Body)
 	}
@@ -256,10 +256,10 @@ func TestTransferPostsTwoBalancedRows(t *testing.T) {
 
 func TestOverdrawIsRefusedAtCommitAndRecorded(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	signup(t, "08030000002", "Chukwuemeka Obi")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	signup(t, "obi", "Chukwuemeka Obi")
 
-	w := send(t, a.Token, "08030000002", 500_001, "k-over")
+	w := send(t, a.Token, "obi", 500_001, "k-over")
 	if w.Code != 422 {
 		t.Fatalf("%d: %s", w.Code, w.Body)
 	}
@@ -294,12 +294,12 @@ func TestTwoDevicesOneAccount(t *testing.T) {
 	// Arrival order decides; the server accepts the first and refuses the
 	// second, so the ledger never goes negative.
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	signup(t, "08030000002", "Chukwuemeka Obi")
-	signup(t, "08030000003", "Nneka Okafor")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	signup(t, "obi", "Chukwuemeka Obi")
+	signup(t, "nneka", "Nneka Okafor")
 
-	first := send(t, a.Token, "08030000002", 300_000, "phone-a")
-	second := send(t, a.Token, "08030000003", 300_000, "tablet-b")
+	first := send(t, a.Token, "obi", 300_000, "phone-a")
+	second := send(t, a.Token, "nneka", 300_000, "tablet-b")
 	if first.Code != 201 || second.Code != 422 {
 		t.Fatalf("first %d second %d: %s", first.Code, second.Code, second.Body)
 	}
@@ -310,11 +310,11 @@ func TestTwoDevicesOneAccount(t *testing.T) {
 
 func TestIdempotentReplayAndMismatch(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	signup(t, "08030000002", "Chukwuemeka Obi")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	signup(t, "obi", "Chukwuemeka Obi")
 
-	first := send(t, a.Token, "08030000002", 50_000, "k-replay")
-	second := send(t, a.Token, "08030000002", 50_000, "k-replay")
+	first := send(t, a.Token, "obi", 50_000, "k-replay")
+	second := send(t, a.Token, "obi", 50_000, "k-replay")
 	if first.Code != 201 || second.Code != 201 || first.Body.String() != second.Body.String() {
 		t.Fatalf("replay: %d %d\n%s\n%s", first.Code, second.Code, first.Body, second.Body)
 	}
@@ -322,14 +322,14 @@ func TestIdempotentReplayAndMismatch(t *testing.T) {
 		t.Fatalf("replay charged twice: %d", balance(t, a.Token))
 	}
 
-	w := send(t, a.Token, "08030000002", 60_000, "k-replay")
+	w := send(t, a.Token, "obi", 60_000, "k-replay")
 	if w.Code != 422 || decode[errorEnvelope](t, w).Error.Reason != string(httpx.ReasonIdempotencyMismatch) {
 		t.Fatalf("mismatch: %d %s", w.Code, w.Body)
 	}
 
 	t.Run("two taps are two intents, two keys, two transfers", func(t *testing.T) {
-		x := send(t, a.Token, "08030000002", 10_000, "tap-1")
-		y := send(t, a.Token, "08030000002", 10_000, "tap-2")
+		x := send(t, a.Token, "obi", 10_000, "tap-1")
+		y := send(t, a.Token, "obi", 10_000, "tap-2")
 		if x.Code != 201 || y.Code != 201 {
 			t.Fatalf("%d %d", x.Code, y.Code)
 		}
@@ -341,8 +341,8 @@ func TestIdempotentReplayAndMismatch(t *testing.T) {
 
 func TestSelfTransferAndUnknownRecipient(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	w := send(t, a.Token, "08030000001", 1_000, "")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	w := send(t, a.Token, "ayomide", 1_000, "")
 	if w.Code != 422 || decode[errorEnvelope](t, w).Error.Reason != string(httpx.ReasonSelfTransfer) {
 		t.Fatalf("self: %d %s", w.Code, w.Body)
 	}
@@ -350,7 +350,7 @@ func TestSelfTransferAndUnknownRecipient(t *testing.T) {
 	if w.Code != 404 || decode[errorEnvelope](t, w).Error.Reason != string(httpx.ReasonRecipientNotFound) {
 		t.Fatalf("unknown: %d %s", w.Code, w.Body)
 	}
-	w = call(t, a.Token, "POST", "/api/v1/transfers", map[string]any{"to_phone": "08030000002", "amount_kobo": 0}, nil)
+	w = call(t, a.Token, "POST", "/api/v1/transfers", map[string]any{"to_username": "obi", "amount_kobo": 0}, nil)
 	if w.Code != 400 || decode[errorEnvelope](t, w).Error.FieldErrors["AmountKobo"] == nil {
 		t.Fatalf("zero amount: %d %s", w.Code, w.Body)
 	}
@@ -358,13 +358,13 @@ func TestSelfTransferAndUnknownRecipient(t *testing.T) {
 
 func TestRecipientHearsAboutItOverSSE(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	b := signup(t, "08030000002", "Chukwuemeka Obi")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	b := signup(t, "obi", "Chukwuemeka Obi")
 
 	ch, unsubscribe := hub.Subscribe(b.User.ID)
 	defer unsubscribe()
 
-	if w := send(t, a.Token, "08030000002", 25_000, "k-sse"); w.Code != 201 {
+	if w := send(t, a.Token, "obi", 25_000, "k-sse"); w.Code != 201 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -383,7 +383,7 @@ func TestRecipientHearsAboutItOverSSE(t *testing.T) {
 	}
 
 	t.Run("a rejected transfer is never announced", func(t *testing.T) {
-		if w := send(t, a.Token, "08030000002", 9_999_999, "k-sse-over"); w.Code != 422 {
+		if w := send(t, a.Token, "obi", 9_999_999, "k-sse-over"); w.Code != 422 {
 			t.Fatalf("%d", w.Code)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -405,7 +405,7 @@ func TestRecipientHearsAboutItOverSSE(t *testing.T) {
 		for hub.Subscribers(b.User.ID) < 2 && time.Now().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
 		}
-		send(t, a.Token, "08030000002", 1_000, "k-frame")
+		send(t, a.Token, "obi", 1_000, "k-frame")
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 		<-done
@@ -417,10 +417,10 @@ func TestRecipientHearsAboutItOverSSE(t *testing.T) {
 
 func TestTransactionsPaginate(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	signup(t, "08030000002", "Chukwuemeka Obi")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	signup(t, "obi", "Chukwuemeka Obi")
 	for i := 0; i < 5; i++ {
-		send(t, a.Token, "08030000002", 1_000, fmt.Sprintf("p-%d", i))
+		send(t, a.Token, "obi", 1_000, fmt.Sprintf("p-%d", i))
 	}
 	p1 := decode[pageEnvelope[transferWire]](t, call(t, a.Token, "GET", "/api/v1/transactions?limit=2", nil, nil))
 	if len(p1.Data) != 2 || !p1.Meta.HasMore || p1.Meta.NextCursor == nil {
@@ -435,10 +435,10 @@ func TestTransactionsPaginate(t *testing.T) {
 
 func TestStageView(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
-	me := signup(t, "08030000000", "Feranmi Adeniji")
-	send(t, a.Token, "08030000000", 50_000, "stage-1")
-	send(t, a.Token, "08030000000", 50_000, "stage-2")
+	a := signup(t, "ayomide", "Ayomide Bello")
+	me := signup(t, "feranmi", "Feranmi Adeniji")
+	send(t, a.Token, "feranmi", 50_000, "stage-1")
+	send(t, a.Token, "feranmi", 50_000, "stage-2")
 	w := call(t, me.Token, "GET", "/api/v1/ops/stage", nil, nil)
 	st := decode[dataEnvelope[struct {
 		Name          string `json:"name"`
@@ -472,7 +472,7 @@ func TestLedgerIsAppendOnly(t *testing.T) {
 
 func TestTokenScopesWallet(t *testing.T) {
 	reset(t)
-	signup(t, "08030000001", "Ayomide Bello")
+	signup(t, "ayomide", "Ayomide Bello")
 	tok, _ := middleware.SignToken(secret, "u_NOBODY", time.Hour)
 	w := call(t, tok, "GET", "/api/v1/wallet", nil, nil)
 	if w.Code != 404 {
@@ -484,7 +484,7 @@ func TestTokenScopesWallet(t *testing.T) {
 
 func TestTelemetry(t *testing.T) {
 	reset(t)
-	a := signup(t, "08030000001", "Ayomide Bello")
+	a := signup(t, "ayomide", "Ayomide Bello")
 	w := call(t, a.Token, "POST", "/api/v1/telemetry", map[string]any{"events": []map[string]any{
 		{"kind": "queue.drained", "payload": map[string]int{"sent": 2}, "occurred_at": time.Now().UTC()},
 		{"kind": "app.start", "occurred_at": time.Now().UTC()},

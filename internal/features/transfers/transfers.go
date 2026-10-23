@@ -21,6 +21,7 @@ import (
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/middleware"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/money"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/pagination"
+	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/validation"
 )
 
 // Transfer is the wire shape.
@@ -39,7 +40,7 @@ type Transfer struct {
 
 // CreateRequest is the body for POST /transfers.
 type CreateRequest struct {
-	ToPhone         string     `json:"to_phone" binding:"required,min=7,max=20"`
+	ToUsername      string     `json:"to_username" binding:"required,username"`
 	AmountKobo      money.Kobo `json:"amount_kobo" binding:"required,gt=0"`
 	ClientCreatedAt *time.Time `json:"client_created_at"`
 }
@@ -73,9 +74,9 @@ func (r repo) partyByUser(ctx context.Context, userID string) (party, error) {
 	return p, err
 }
 
-func (r repo) partyByPhone(ctx context.Context, phone string) (party, error) {
+func (r repo) partyByUsername(ctx context.Context, username string) (party, error) {
 	var p party
-	err := r.pool.QueryRow(ctx, `SELECT u.id, w.id, u.name FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.phone = $1`, phone).
+	err := r.pool.QueryRow(ctx, `SELECT u.id, w.id, u.name FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.username = $1`, username).
 		Scan(&p.userID, &p.walletID, &p.name)
 	return p, err
 }
@@ -168,7 +169,7 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (middleware.Stor
 	if err != nil {
 		return middleware.Stored{}, false, err
 	}
-	to, err := s.repo.partyByPhone(ctx, in.ToPhone)
+	to, err := s.repo.partyByUsername(ctx, validation.Username(in.ToUsername))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return middleware.Stored{}, false, httpx.Domain(httpx.ReasonRecipientNotFound, httpx.MsgRecipientNotFound, http.StatusNotFound)
 	}

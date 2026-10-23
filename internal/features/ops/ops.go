@@ -13,6 +13,7 @@ import (
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/httpx"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/middleware"
 	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/money"
+	"github.com/spiderocious/devfest-akure-2026/wallet/backend/internal/validation"
 )
 
 // Reconcile is GET /ops/reconcile.
@@ -39,7 +40,7 @@ type Stage struct {
 	Recent        []StageRow `json:"recent"`
 }
 
-// Lookup is GET /users?phone=.
+// Lookup is GET /users?username=.
 type Lookup struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -106,10 +107,10 @@ func (s *Service) Stage(ctx context.Context) (Stage, error) {
 	return st, rows.Err()
 }
 
-// Lookup finds a recipient by phone and returns only id and name.
-func (s *Service) Lookup(ctx context.Context, phone string) (Lookup, error) {
+// Lookup finds a recipient by username and returns only id and name.
+func (s *Service) Lookup(ctx context.Context, username string) (Lookup, error) {
 	var l Lookup
-	err := s.pool.QueryRow(ctx, `SELECT id, name FROM users WHERE phone = $1`, phone).Scan(&l.ID, &l.Name)
+	err := s.pool.QueryRow(ctx, `SELECT id, name FROM users WHERE username = $1`, username).Scan(&l.ID, &l.Name)
 	if err != nil {
 		return Lookup{}, httpx.Domain(httpx.ReasonRecipientNotFound, httpx.MsgRecipientNotFound, 404)
 	}
@@ -137,12 +138,12 @@ func (h handler) stage(c *gin.Context) {
 }
 
 func (h handler) lookup(c *gin.Context) {
-	phone := c.Query("phone")
-	if phone == "" {
-		httpx.Fail(c, httpx.Validation(map[string][]string{"phone": {"required"}}))
+	username := c.Query("username")
+	if username == "" {
+		httpx.Fail(c, httpx.Validation(map[string][]string{"username": {"required"}}))
 		return
 	}
-	out, err := h.svc.Lookup(c.Request.Context(), phone)
+	out, err := h.svc.Lookup(c.Request.Context(), validation.Username(username))
 	if err != nil {
 		httpx.Fail(c, err)
 		return
