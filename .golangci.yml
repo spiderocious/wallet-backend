@@ -1,0 +1,33 @@
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - misspell
+    - gosec
+    - revive
+    - gocritic
+  settings:
+    gosec:
+      excludes:
+        - G404 # math/rand in the demo chaos switch is deliberate
+        - G115 # int -> uint32 port conversion in the test harness
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck]
+      # G101 matches constant names containing "credentials" or "token".
+      # These are error reason codes and message keys, not secrets.
+      - path: internal/httpx/
+        linters: [gosec]
+        text: G101
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: github.com/spiderocious/devfest-akure-2026
